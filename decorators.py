@@ -18,7 +18,10 @@ if USE_SUPABASE:
 
 def get_db():
     if USE_SUPABASE:
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        conn = psycopg2.connect(
+            os.getenv("DATABASE_URL"),
+            sslmode="require"
+        )
         conn.cursor_factory = psycopg2.extras.RealDictCursor
         return conn
     else:
@@ -29,7 +32,6 @@ def get_db():
 def execute(conn, query, params=()):
     """Helper to handle both SQLite and PostgreSQL differences"""
     if USE_SUPABASE:
-        # PostgreSQL uses %s instead of ?
         query = query.replace("?", "%s")
         cur = conn.cursor()
         cur.execute(query, params)
@@ -106,13 +108,11 @@ def load_knowledge():
 
     knowledge = ""
     for row in rows:
-        title = row["title"] if USE_SUPABASE else row["title"]
-        content = row["content"] if USE_SUPABASE else row["content"]
         knowledge += f"""
-Title: {title}
+Title: {row["title"]}
 
 Content:
-{content}
+{row["content"]}
 
 --------------------
 """
@@ -146,10 +146,10 @@ If the Knowledge Base contains absolutely no information relevant to the user's 
 
 ---
 Knowledge Base:
-{{knowledge}}
+{knowledge}
 
 Question:
-{{question}}
+{question}
 """
 
     response = client.chat.completions.create(
