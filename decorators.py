@@ -9,16 +9,44 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=1)
 
 DATABASE = "database.db"
 
+# Detect environment
+USE_SUPABASE = os.getenv("DATABASE_URL") is not None
+
+if USE_SUPABASE:
+    import psycopg2
+    import psycopg2.extras
+
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if USE_SUPABASE:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+    else:
+        conn = sqlite3.connect(DATABASE)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def execute(conn, query, params=()):
+    """Helper to handle both SQLite and PostgreSQL differences"""
+    if USE_SUPABASE:
+        # PostgreSQL uses %s instead of ?
+        query = query.replace("?", "%s")
+        cur = conn.cursor()
+        cur.execute(query, params)
+        return cur
+    else:
+        return conn.execute(query, params)
 
 def init_db():
-
     conn = get_db()
 
-    conn.execute("""
+    execute(conn, """
+    CREATE TABLE IF NOT EXISTS admin(
+        id SERIAL PRIMARY KEY,
+        username TEXT,
+        password TEXT
+    )
+    """) if USE_SUPABASE else execute(conn, """
     CREATE TABLE IF NOT EXISTS admin(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT,
@@ -26,7 +54,13 @@ def init_db():
     )
     """)
 
-    conn.execute("""
+    execute(conn, """
+    CREATE TABLE IF NOT EXISTS knowledge(
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        content TEXT
+    )
+    """) if USE_SUPABASE else execute(conn, """
     CREATE TABLE IF NOT EXISTS knowledge(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT,
@@ -34,7 +68,14 @@ def init_db():
     )
     """)
 
-    conn.execute("""
+    execute(conn, """
+    CREATE TABLE IF NOT EXISTS chat_history(
+        id SERIAL PRIMARY KEY,
+        question TEXT,
+        answer TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """) if USE_SUPABASE else execute(conn, """
     CREATE TABLE IF NOT EXISTS chat_history(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         question TEXT,
@@ -47,58 +88,37 @@ def init_db():
     conn.close()
 
 def create_admin():
-
     conn = get_db()
-
-    admin = conn.execute(
-        "SELECT * FROM admin"
-    ).fetchone()
+    cur = execute(conn, "SELECT * FROM admin")
+    admin = cur.fetchone() if USE_SUPABASE else conn.execute("SELECT * FROM admin").fetchone()
 
     if not admin:
-
-        conn.execute(
-            """
-            INSERT INTO admin
-            (username,password)
-            VALUES (?,?)
-            """,
-            ("admin", "admin1234")
-        )
-
+        execute(conn, "INSERT INTO admin (username, password) VALUES (?, ?)", ("admin", "admin1234"))
         conn.commit()
 
     conn.close()
 
 def load_knowledge():
-
     conn = get_db()
-
-    rows = conn.execute(
-        """
-        SELECT title, content
-        FROM knowledge
-        """
-    ).fetchall()
-
+    cur = execute(conn, "SELECT title, content FROM knowledge")
+    rows = cur.fetchall() if USE_SUPABASE else conn.execute("SELECT title, content FROM knowledge").fetchall()
     conn.close()
 
     knowledge = ""
-
     for row in rows:
-
+        title = row["title"] if USE_SUPABASE else row["title"]
+        content = row["content"] if USE_SUPABASE else row["content"]
         knowledge += f"""
-Title: {row['title']}
+Title: {title}
 
 Content:
-{row['content']}
+{content}
 
 --------------------
 """
-
     return knowledge
 
 def ask_groq(question):
-
     knowledge = load_knowledge()
 
     prompt = f"""
@@ -126,23 +146,15 @@ If the Knowledge Base contains absolutely no information relevant to the user's 
 
 ---
 Knowledge Base:
-{knowledge}
+{{knowledge}}
 
 Question:
-{question}
+{{question}}
 """
 
     response = client.chat.completions.create(
-
         model="llama-3.3-70b-versatile",
-
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=500
     )
