@@ -3,7 +3,7 @@ from groq import Groq
 from dotenv import load_dotenv
 import sqlite3
 import os
-from decorators import create_admin, get_db, init_db, ask_groq
+from decorators import create_admin, get_db, init_db, ask_groq, execute
 
 load_dotenv()
 
@@ -16,30 +16,21 @@ client = Groq(
 
 DATABASE = "database.db"
 
+USE_SUPABASE = os.getenv("DATABASE_URL") is not None
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def login():
-
     if request.method == "POST":
-
         username = request.form["username"]
         password = request.form["password"]
 
         conn = get_db()
-
-        admin = conn.execute(
-            """
-            SELECT * FROM admin
-            WHERE username=? AND password=?
-            """,
-            (username, password)
-        ).fetchone()
-
+        cur = execute(conn, "SELECT * FROM admin WHERE username=? AND password=?", (username, password))
+        admin = cur.fetchone() if USE_SUPABASE else cur.fetchone()
         conn.close()
 
         if admin:
-
             session["admin"] = admin["id"]
-
             return redirect("/admin")
 
         flash("Invalid credentials")
@@ -48,33 +39,23 @@ def login():
 
 @app.route("/logout")
 def logout():
-
     session.pop("admin", None)
-
     return redirect("/")
 
 @app.route("/admin")
 def admin():
-
     if "admin" not in session:
         return redirect("/")
 
     conn = get_db()
-
-    knowledge = conn.execute(
-        "SELECT * FROM knowledge ORDER BY id DESC"
-    ).fetchall()
-
+    cur = execute(conn, "SELECT * FROM knowledge ORDER BY id DESC")
+    knowledge = cur.fetchall()
     conn.close()
 
-    return render_template(
-        "admin.html",
-        knowledge=knowledge
-    )
+    return render_template("admin.html", knowledge=knowledge)
 
 @app.route("/add_knowledge", methods=["POST"])
 def add_knowledge():
-
     if "admin" not in session:
         return redirect("/")
 
@@ -82,16 +63,7 @@ def add_knowledge():
     content = request.form["content"]
 
     conn = get_db()
-
-    conn.execute(
-        """
-        INSERT INTO knowledge
-        (title, content)
-        VALUES (?, ?)
-        """,
-        (title, content)
-    )
-
+    execute(conn, "INSERT INTO knowledge (title, content) VALUES (?, ?)", (title, content))
     conn.commit()
     conn.close()
 
@@ -99,31 +71,16 @@ def add_knowledge():
 
 @app.route("/api/knowledge/<int:id>", methods=["GET"])
 def get_knowledge(id):
-
     if "admin" not in session:
-        return jsonify({
-            "success": False,
-            "message": "Unauthorized"
-        }), 401
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     conn = get_db()
-
-    item = conn.execute(
-        """
-        SELECT *
-        FROM knowledge
-        WHERE id=?
-        """,
-        (id,)
-    ).fetchone()
-
+    cur = execute(conn, "SELECT * FROM knowledge WHERE id=?", (id,))
+    item = cur.fetchone()
     conn.close()
 
     if not item:
-        return jsonify({
-            "success": False,
-            "message": "Knowledge not found"
-        }), 404
+        return jsonify({"success": False, "message": "Knowledge not found"}), 404
 
     return jsonify({
         "success": True,
@@ -136,84 +93,42 @@ def get_knowledge(id):
 
 @app.route("/api/knowledge/<int:id>", methods=["PUT"])
 def update_knowledge(id):
-
     if "admin" not in session:
-        return jsonify({
-            "success": False,
-            "message": "Unauthorized"
-        }), 401
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     data = request.get_json()
-
     title = data.get("title", "").strip()
     content = data.get("content", "").strip()
 
     if not title or not content:
-        return jsonify({
-            "success": False,
-            "message": "Title and content are required"
-        }), 400
+        return jsonify({"success": False, "message": "Title and content are required"}), 400
 
     conn = get_db()
-
-    cursor = conn.execute(
-        """
-        UPDATE knowledge
-        SET title=?, content=?
-        WHERE id=?
-        """,
-        (title, content, id)
-    )
-
+    cur = execute(conn, "UPDATE knowledge SET title=?, content=? WHERE id=?", (title, content, id))
     conn.commit()
-
-    updated = cursor.rowcount > 0
-
+    updated = cur.rowcount > 0
     conn.close()
 
     if not updated:
-        return jsonify({
-            "success": False,
-            "message": "Knowledge not found"
-        }), 404
+        return jsonify({"success": False, "message": "Knowledge not found"}), 404
 
-    return jsonify({
-        "success": True,
-        "message": "Knowledge updated successfully"
-    })
+    return jsonify({"success": True, "message": "Knowledge updated successfully"})
 
 @app.route("/api/knowledge/<int:id>", methods=["DELETE"])
 def delete_knowledge(id):
-
     if "admin" not in session:
-        return jsonify({
-            "success": False,
-            "message": "Unauthorized"
-        }), 401
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     conn = get_db()
-
-    cursor = conn.execute(
-        "DELETE FROM knowledge WHERE id=?",
-        (id,)
-    )
-
+    cur = execute(conn, "DELETE FROM knowledge WHERE id=?", (id,))
     conn.commit()
-
-    deleted = cursor.rowcount > 0
-
+    deleted = cur.rowcount > 0
     conn.close()
 
     if not deleted:
-        return jsonify({
-            "success": False,
-            "message": "Knowledge not found"
-        }), 404
+        return jsonify({"success": False, "message": "Knowledge not found"}), 404
 
-    return jsonify({
-        "success": True,
-        "message": "Knowledge deleted successfully"
-    })
+    return jsonify({"success": True, "message": "Knowledge deleted successfully"})
 
 @app.route("/")
 def chat_page():
@@ -222,34 +137,19 @@ def chat_page():
 @app.route("/api/ask", methods=["POST"])
 def ask_api():
     data = request.get_json()
-
     question = data.get("message", "").strip()
 
     if not question:
-        return jsonify({
-            "success": False,
-            "message": "Question is required"
-        }), 400
+        return jsonify({"success": False, "message": "Question is required"}), 400
 
     answer = ask_groq(question)
 
     conn = get_db()
-
-    conn.execute(
-        """
-        INSERT INTO chat_history (question, answer)
-        VALUES (?, ?)
-        """,
-        (question, answer)
-    )
-
+    execute(conn, "INSERT INTO chat_history (question, answer) VALUES (?, ?)", (question, answer))
     conn.commit()
     conn.close()
 
-    return jsonify({
-        "success": True,
-        "answer": answer
-    })
+    return jsonify({"success": True, "answer": answer})
 
 
 if __name__ == "__main__":
