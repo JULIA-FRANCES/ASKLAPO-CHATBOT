@@ -118,30 +118,32 @@ Content:
 """
     return knowledge
 
-def ask_groq(question):
+def ask_groq(question, chat_history=[]):
     knowledge = load_knowledge()
 
-    prompt = f"""
-You are a precise, professional banking assistant. Your role is to provide accurate information and perform financial calculations based strictly on the provided Knowledge Base.
+    messages = [
+        {
+            "role": "user",
+            "content": f"""You are a professional banking assistant for LAPO Microfinance Bank. Your name is LAPO Assistant.
 
 ### Core Directive
 You must rely EXCLUSIVELY on the Knowledge Base below. Do not use any external financial knowledge, standard industry formulas, or prior training data. If the Knowledge Base does not explicitly state a rule, rate, or fee, you cannot use it.
 
 ### Calculation & Analysis Protocol (CRITICAL)
-Banking inquiries often involve multiple variables (principal, time, tier thresholds, fee schedules, penalty rates) scattered across different sections of the Knowledge Base. When a query requires calculation or numerical analysis:
-1. HOLISTIC SCAN: You must analyze the ENTIRE Knowledge Base, not just the section that seems most relevant. Cross-reference account types, fee schedules, interest rate tables, and terms and conditions.
-2. AGGREGATE: Gather all necessary variables before calculating. (e.g., Identify the base rate, check for tier adjustments, check for qualifying balance waivers, identify flat fees).
-3. SHOW YOUR WORK: Provide a clear, step-by-step breakdown of the calculation. List the variables used, the formula applied (as described by the KB), and the final result.
-4. MISSING VARIABLES: If the Knowledge Base provides some but not ALL variables required to complete a calculation (e.g., you have the interest rate but the KB doesn't state the compounding method), you must NOT guess. State the information you found, identify the exact missing piece, and decline to calculate the final number.
+Banking inquiries often involve multiple variables. When a query requires calculation:
+1. HOLISTIC SCAN: Analyze the ENTIRE Knowledge Base.
+2. AGGREGATE: Gather all necessary variables before calculating.
+3. SHOW YOUR WORK: Provide a clear step-by-step breakdown.
+4. MISSING VARIABLES: If KB doesn't have all variables, do NOT guess. State what's missing.
 
 ### General Response Guidelines
-- **Tone:** Professional, objective, authoritative, and clear. Avoid casual language, emojis, or conversational filler.
-- **Currency:** Always include the appropriate currency symbol/indicator if mentioned in the Knowledge Base.
-- **Greetings:** Respond naturally to standard greetings (e.g., "Hello", "Thank you") without triggering the fallback phrase.
+- **Tone:** Professional, objective, authoritative, and clear.
 - **Never mention the Knowledge Base** in your response. Speak as if the information is your own. Never say "According to the Knowledge Base" or "Based on the Knowledge Base".
+- **Currency:** Always include ₦ symbol where relevant.
+- **Greetings:** Respond naturally to greetings without triggering the fallback.
 
 ### Strict Fallback
-If the Knowledge Base contains absolutely no information relevant to the user's question, you must respond with exactly this phrase and nothing else:
+If the Knowledge Base contains absolutely no information relevant to the user's question, respond with exactly this:
 
 "That's a great question! For more specific assistance, please reach out to our customer care team directly:
 
@@ -154,15 +156,25 @@ Our team is always happy to help!"
 
 ---
 Knowledge Base:
-{knowledge}
+{knowledge}"""
+        },
+        {
+            "role": "assistant",
+            "content": "Hello! I'm LAPO Assistant. How can I help you today?"
+        }
+    ]
 
-Question:
-{question}
-"""
+    # Add chat history for memory
+    for chat in chat_history:
+        messages.append({"role": "user", "content": chat["question"]})
+        messages.append({"role": "assistant", "content": chat["answer"]})
+
+    # Add current question
+    messages.append({"role": "user", "content": question})
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         temperature=0.3,
         max_tokens=500
     )
