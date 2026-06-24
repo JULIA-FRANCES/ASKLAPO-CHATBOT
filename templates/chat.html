@@ -52,9 +52,9 @@
 
         .ai-avatar {
             width: 36px; height: 36px; border-radius: 10px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            background: linear-gradient(135deg, #008D4B, #EC8020);
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 0 20px var(--accent-glow);
+            box-shadow: 0 0 20px rgba(0, 141, 75, 0.2);
         }
 
         .ai-avatar svg { color: white; }
@@ -241,12 +241,12 @@
 
         .send-btn {
             width: 36px; height: 36px; border-radius: 10px;
-            background: var(--accent); border: none; color: white;
+            .send-btn { background: #008D4B; }
             cursor: pointer; display: flex; align-items: center; justify-content: center;
             transition: all 0.2s; flex-shrink: 0;
         }
 
-        .send-btn:hover { background: var(--accent-light); transform: scale(1.05); }
+        .send-btn:hover { background: #EC8020;; transform: scale(1.05); }
         .send-btn:active { transform: scale(0.95); }
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .send-btn svg { transition: transform 0.2s; }
